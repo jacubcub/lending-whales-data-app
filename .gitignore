@@ -1,0 +1,4 @@
+whale_stuff/app/venv
+.vscode/*
+secrets.toml
+.DS_store
