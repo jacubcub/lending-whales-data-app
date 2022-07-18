@@ -1,3 +1,4 @@
+from pyrsistent import get_in
 import streamlit as st
 import pandas as pd
 import requests
@@ -50,3 +51,8 @@ agg_df["usd_value"] = agg_df["usd_value"].apply(lambda x: "${:,.2f}".format(x))
 agg_df.rename(columns={"account_id": "ADDRESS", "usd_value": position_side_column_label, "asset_count": number_assets_column_label}, inplace=True)
 
 st.write(agg_df)
+
+if st.button("Clear Cached Data"):
+    get_initial_data.clear()
+    get_initial_data()
+    
