@@ -1,4 +1,4 @@
-app/venv/*
+venv/*
 .vscode/*
 secrets.toml
 .DS_store
