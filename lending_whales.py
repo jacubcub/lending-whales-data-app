@@ -13,7 +13,6 @@ st.title("🐋 Whale Watcher")
 st.text("AAVE V2 on Avalanche")
 
 # using secrets file for general env vars https://docs.streamlit.io/streamlit-cloud/get-started/deploy-an-app/connect-to-data-sources/secrets-management
-NUMBER_OF_ACCOUNTS = st.secrets["NUMBER_OF_ACCOUNTS"]
 url = st.secrets["AAVE_SUBGRAPH"]
 
 sg = Subgrounds()
