@@ -1,8 +1,7 @@
 import pandas as pd
-import asyncio
-import aiohttp
-from string import Template
 import requests
+from st_aggrid import AgGrid, GridOptionsBuilder
+from st_aggrid.shared import GridUpdateMode
 
 def convert_address_to_link(address: str, url_root: str, target: str = "_blank") -> str:
     """Creates an HTML link by appending address to url
@@ -19,38 +18,6 @@ def convert_address_to_link(address: str, url_root: str, target: str = "_blank")
     return f'<a target="{target}" href="{url_root}{address}">{address}</a>'
 
 
-async def get_token_price(session: aiohttp.ClientSession, token_id: str, url: str) -> dict:
-    """get token price"""
-    str = Template("""
-    {
-    market(id: "$token_id") {
-        inputToken {
-            id
-            name
-            symbol
-            decimals
-        }
-        inputTokenPriceUSD
-        }
-    }
-    """).substitute(token_id=token_id)
-    payload = {
-    'query': 
-    str        
-    }
-    resp = await session.request('POST', url=url, json=payload)
-    data = await resp.json()
-    return data
-
-
-async def get_token_prices(token_ids: list, url: str) -> list:
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        for token_id in token_ids:
-            tasks.append(get_token_price(session=session, token_id=token_id, url=url))
-        token_prices = await asyncio.gather(*tasks, return_exceptions=True)
-        return token_prices
-
 def get_all_open_positions(subgraph_url: str) -> pd.DataFrame:
     """Gets all open positions from extended lending subgraph
 
@@ -59,8 +26,8 @@ def get_all_open_positions(subgraph_url: str) -> pd.DataFrame:
 
     Returns:
         pd.DataFrame: Pandas DataFrame of positions with columns
-            ['balance', 'side', 'market.inputTokenPriceUSD',
-            'market.inputToken.symbol', 'market.inputToken.decimals', 'account_id', 'balance_adj', 'balance_usd]
+            ['side', 'market.inputTokenPriceUSD',
+            'market.inputToken.symbol', 'account_id', 'balance_adj', 'balance_usd]
     """
     last_id = "0x0000000000000000000000000000000000000000"
     data_list = []
@@ -110,4 +77,34 @@ def get_all_open_positions(subgraph_url: str) -> pd.DataFrame:
     positions_df["market.inputTokenPriceUSD"] = pd.to_numeric(positions_df["market.inputTokenPriceUSD"])
     positions_df["balance_adj"] = positions_df["balance"] / (10 ** positions_df["market.inputToken.decimals"])
     positions_df["balance_usd"] = positions_df["balance_adj"] * positions_df["market.inputTokenPriceUSD"]
+    # don't need these anymore and balance will just cause issues due to large numbers
+    positions_df.drop(columns=["balance", "market.inputToken.decimals"], inplace=True)
     return positions_df
+
+
+def aggrid_interactive_table(df: pd.DataFrame):
+    """Creates an st-aggrid interactive table based on a dataframe.
+
+    Args:
+        df (pd.DataFrame]): Source dataframe
+
+    Returns:
+        dict: The selected row
+    """
+    options = GridOptionsBuilder.from_dataframe(
+        df, enableRowGroup=True, enableValue=True, enablePivot=True
+    )
+
+    options.configure_side_bar()
+
+    options.configure_selection("single")
+    selection = AgGrid(
+        df,
+        enable_enterprise_modules=True,
+        gridOptions=options.build(),
+        theme="dark",
+        update_mode=GridUpdateMode.MODEL_CHANGED,
+        allow_unsafe_jscode=True,
+    )
+
+    return selection

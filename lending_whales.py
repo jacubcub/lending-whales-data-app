@@ -36,9 +36,9 @@ else:
     position_side_column_label = "CURRENT BORROWS"
     number_assets_column_label = "NO. OF UNIQUE ASSETS BORROWED"
 
-depositor_df = open_positions_df[(open_positions_df["side"] == position_side)]
+sided_df = open_positions_df[(open_positions_df["side"] == position_side)]
 
-agg_df = depositor_df.groupby("account_id", as_index=False).agg(
+agg_df = sided_df.groupby("account_id", as_index=False).agg(
     usd_value=('balance_usd', 'sum'),
     asset_count=('market.inputToken.symbol', 'count')
     ).sort_values(
@@ -47,12 +47,29 @@ agg_df = depositor_df.groupby("account_id", as_index=False).agg(
     )[:100].reset_index(drop=True)
 
 
-agg_df["usd_value"] = agg_df["usd_value"].apply(lambda x: "${:,.2f}".format(x))
+agg_df["usd_value"] = agg_df["usd_value"].apply(lambda x: "${:,.0f}".format(x))
 agg_df.rename(columns={"account_id": "ADDRESS", "usd_value": position_side_column_label, "asset_count": number_assets_column_label}, inplace=True)
 
-st.write(agg_df)
+selection = utils.aggrid_interactive_table(agg_df)
 
 if st.button("Clear Cached Data"):
     get_initial_data.clear()
     get_initial_data()
+
+if selection:
+    try:
+        selected_address = selection["selected_rows"][0]["ADDRESS"]
+        st.write(selected_address)
+        address_deposit_positions = open_positions_df[(open_positions_df["side"] == "LENDER") & (open_positions_df["account_id"] == selected_address)]
+        display_user_deposits_df = address_deposit_positions[["market.inputToken.symbol", "balance_adj", "market.inputTokenPriceUSD", "balance_usd"]]
+        display_user_deposits_df["balance_usd"] = display_user_deposits_df["balance_usd"].apply(lambda x: "${:,.0f}".format(x))
+        display_user_deposits_df["balance_adj"] = display_user_deposits_df["balance_adj"].apply(lambda x: "{:,.2f}".format(x))
+        display_user_deposits_df["market.inputTokenPriceUSD"] = display_user_deposits_df["market.inputTokenPriceUSD"].apply(lambda x: "${:,.2f}".format(x))
+        display_user_deposits_df.rename(columns={
+            "market.inputToken.symbol": "ASSET", "balance_adj": "DEPOSIT AMOUNT", "market.inputTokenPriceUSD": "VALUE",
+            "balance_usd": "TOTAL DEPOSIT VALUE"}, inplace=True)
+        st.write(display_user_deposits_df)
+    except IndexError:
+        st.write("Select a row in the table to view detailed lending data for that address.")
+    
     
