@@ -59,17 +59,27 @@ if st.button("Clear Cached Data"):
 if selection:
     try:
         selected_address = selection["selected_rows"][0]["ADDRESS"]
-        st.write(selected_address)
+        # DEPOSITS
+        st.write("Deposits -", selected_address)
         address_deposit_positions = open_positions_df[(open_positions_df["side"] == "LENDER") & (open_positions_df["account_id"] == selected_address)]
-        display_user_deposits_df = address_deposit_positions[["market.inputToken.symbol", "balance_adj", "market.inputTokenPriceUSD", "balance_usd"]]
+        display_user_deposits_df = address_deposit_positions[["market.inputToken.symbol", "balance_adj", "market.inputTokenPriceUSD", "balance_usd"]].copy()
         display_user_deposits_df["balance_usd"] = display_user_deposits_df["balance_usd"].apply(lambda x: "${:,.0f}".format(x))
         display_user_deposits_df["balance_adj"] = display_user_deposits_df["balance_adj"].apply(lambda x: "{:,.2f}".format(x))
         display_user_deposits_df["market.inputTokenPriceUSD"] = display_user_deposits_df["market.inputTokenPriceUSD"].apply(lambda x: "${:,.2f}".format(x))
         display_user_deposits_df.rename(columns={
-            "market.inputToken.symbol": "ASSET", "balance_adj": "DEPOSIT AMOUNT", "market.inputTokenPriceUSD": "VALUE",
+            "market.inputToken.symbol": "ASSET", "balance_adj": "DEPOSIT AMOUNT", "market.inputTokenPriceUSD": "CURRENT PRICE",
             "balance_usd": "TOTAL DEPOSIT VALUE"}, inplace=True)
         st.write(display_user_deposits_df)
+        #BORROWS
+        st.write("Borrows -", selected_address)
+        address_borrow_positions = open_positions_df[(open_positions_df["side"] == "BORROWER") & (open_positions_df["account_id"] == selected_address)]
+        display_user_borrows_df = address_borrow_positions[["market.inputToken.symbol", "market.inputTokenPriceUSD", "balance_adj", "balance_usd"]].copy()
+        display_user_borrows_df["balance_usd"] = display_user_borrows_df["balance_usd"].apply(lambda x: "${:,.0f}".format(x))
+        display_user_borrows_df["balance_adj"] = display_user_borrows_df["balance_adj"].apply(lambda x: "{:,.2f}".format(x))
+        display_user_borrows_df["market.inputTokenPriceUSD"] = display_user_borrows_df["market.inputTokenPriceUSD"].apply(lambda x: "${:,.2f}".format(x))
+        display_user_borrows_df.rename(columns={
+            "market.inputToken.symbol": "ASSET", "balance_adj": "BORROWED AMOUNT", "market.inputTokenPriceUSD": "CURRENT PRICE",
+            "balance_usd": "TOTAL BORROWED VALUE"}, inplace=True)
+        st.write(display_user_borrows_df)
     except IndexError:
         st.write("Select a row in the table to view detailed lending data for that address.")
-    
-    

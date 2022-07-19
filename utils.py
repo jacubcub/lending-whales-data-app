@@ -95,8 +95,6 @@ def aggrid_interactive_table(df: pd.DataFrame):
         df, enableRowGroup=True, enableValue=True, enablePivot=True
     )
 
-    options.configure_side_bar()
-
     options.configure_selection("single")
     selection = AgGrid(
         df,
