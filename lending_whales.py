@@ -2,7 +2,7 @@ from pyrsistent import get_in
 import streamlit as st
 import pandas as pd
 import requests
-import plotly.graph_objects as go
+import plotly.express as px
 from subgrounds.subgrounds import Subgrounds
 import utils
 from millify import millify
@@ -97,5 +97,10 @@ if selection:
         st.write(display_user_deposits_df)
         st.write("Borrows")
         st.write(display_user_borrows_df)
+        lcol1, lcol2 = st.columns(2)
+        fig_d = px.pie(address_deposit_positions, values='balance_usd', names='market.inputToken.symbol', title='DEPOSIT COMPOSITION', color_discrete_sequence=px.colors.qualitative.D3)
+        fig_b = px.pie(address_borrow_positions, values='balance_usd', names='market.inputToken.symbol', title='BORROW COMPOSITION', color_discrete_sequence=px.colors.qualitative.D3)
+        lcol1.plotly_chart(fig_d, use_container_width=True)
+        lcol2.plotly_chart(fig_b, use_container_width=True)
     except IndexError:
         st.write("Select a row in the table to view detailed lending data for that address.")
