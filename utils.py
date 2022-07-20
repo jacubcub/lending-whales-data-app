@@ -117,7 +117,7 @@ def get_all_open_positions(subgraph_url: str, block_num: int) -> pd.DataFrame:
     snapshots_df = pd.json_normalize(data_list, record_path=["positions", "market", "dailySnapshots"], meta=[["positions", "market", "market_id"]])
     snapshots_df = snapshots_df.drop_duplicates()
 
-    rates_df = pd.json_normalize(data["data"]["accounts"], record_path=["positions", "market", "rates"], meta=[["positions", "market", "market_id"]])
+    rates_df = pd.json_normalize(data_list, record_path=["positions", "market", "rates"], meta=[["positions", "market", "market_id"]])
     rates_df = rates_df.drop_duplicates()
     rates_pivot = rates_df.pivot(index='positions.market.market_id', columns=['rate_side', 'rate_type'], values='rate')
     rates_data = {
