@@ -21,7 +21,8 @@ lending = sg.load_subgraph(url)
 
 @st.experimental_memo
 def get_initial_data():
-    return utils.get_all_open_positions(url)
+    block = utils.get_lastest_synced_block_number(url)
+    return utils.get_all_open_positions(url, block)
 
 open_positions_df = get_initial_data()
 
@@ -61,25 +62,32 @@ if selection:
         selected_address = selection["selected_rows"][0]["ADDRESS"]
         # DEPOSITS
         st.write("Deposits -", selected_address)
-        address_deposit_positions = open_positions_df[(open_positions_df["side"] == "LENDER") & (open_positions_df["account_id"] == selected_address)]
-        display_user_deposits_df = address_deposit_positions[["market.inputToken.symbol", "balance_adj", "market.inputTokenPriceUSD", "balance_usd"]].copy()
+        address_deposit_positions = open_positions_df[(open_positions_df["side"] == "LENDER") & (open_positions_df["account_id"] == selected_address)].copy()
+        address_deposit_positions["percent_of_total_deposits"] = address_deposit_positions["balance_usd"] / address_deposit_positions["totalDepositBalanceUSD"]
+        display_user_deposits_df = address_deposit_positions[["market.inputToken.symbol", "balance_adj", "market.inputTokenPriceUSD", "balance_usd", "percent_of_total_deposits", "lender_variable_rate"]].copy()
         display_user_deposits_df["balance_usd"] = display_user_deposits_df["balance_usd"].apply(lambda x: "${:,.0f}".format(x))
         display_user_deposits_df["balance_adj"] = display_user_deposits_df["balance_adj"].apply(lambda x: "{:,.2f}".format(x))
         display_user_deposits_df["market.inputTokenPriceUSD"] = display_user_deposits_df["market.inputTokenPriceUSD"].apply(lambda x: "${:,.2f}".format(x))
+        display_user_deposits_df["percent_of_total_deposits"] = display_user_deposits_df["percent_of_total_deposits"].apply(lambda x: "{:,.2f}%".format(x))
+        display_user_deposits_df["lender_variable_rate"] = display_user_deposits_df["lender_variable_rate"].apply(lambda x: "{:,.2f}%".format(x))
         display_user_deposits_df.rename(columns={
             "market.inputToken.symbol": "ASSET", "balance_adj": "DEPOSIT AMOUNT", "market.inputTokenPriceUSD": "CURRENT PRICE",
-            "balance_usd": "TOTAL DEPOSIT VALUE"}, inplace=True)
+            "balance_usd": "TOTAL DEPOSIT VALUE", "percent_of_total_deposits": "% OF TOTAL DEPOSITS", "lender_variable_rate": "APY"}, inplace=True)
         st.write(display_user_deposits_df)
         #BORROWS
         st.write("Borrows -", selected_address)
-        address_borrow_positions = open_positions_df[(open_positions_df["side"] == "BORROWER") & (open_positions_df["account_id"] == selected_address)]
-        display_user_borrows_df = address_borrow_positions[["market.inputToken.symbol", "market.inputTokenPriceUSD", "balance_adj", "balance_usd"]].copy()
+        address_borrow_positions = open_positions_df[(open_positions_df["side"] == "BORROWER") & (open_positions_df["account_id"] == selected_address)].copy()
+        address_borrow_positions["percent_of_total_borrows"] = address_borrow_positions["balance_usd"] / address_borrow_positions["totalBorrowBalanceUSD"]
+        display_user_borrows_df = address_borrow_positions[["market.inputToken.symbol", "market.inputTokenPriceUSD", "balance_adj", "balance_usd", "percent_of_total_borrows", "borrower_variable_rate", "borrower_stable_rate"]].copy()
         display_user_borrows_df["balance_usd"] = display_user_borrows_df["balance_usd"].apply(lambda x: "${:,.0f}".format(x))
         display_user_borrows_df["balance_adj"] = display_user_borrows_df["balance_adj"].apply(lambda x: "{:,.2f}".format(x))
         display_user_borrows_df["market.inputTokenPriceUSD"] = display_user_borrows_df["market.inputTokenPriceUSD"].apply(lambda x: "${:,.2f}".format(x))
+        display_user_borrows_df["percent_of_total_borrows"] = display_user_borrows_df["percent_of_total_borrows"].apply(lambda x: "{:,.2f}%".format(x))
+        display_user_borrows_df["borrower_variable_rate"] = display_user_borrows_df["borrower_variable_rate"].apply(lambda x: "{:,.2f}%".format(x))
+        display_user_borrows_df["borrower_stable_rate"] = display_user_borrows_df["borrower_stable_rate"].apply(lambda x: "{:,.2f}%".format(x))
         display_user_borrows_df.rename(columns={
             "market.inputToken.symbol": "ASSET", "balance_adj": "BORROWED AMOUNT", "market.inputTokenPriceUSD": "CURRENT PRICE",
-            "balance_usd": "TOTAL BORROWED VALUE"}, inplace=True)
+            "balance_usd": "TOTAL BORROWED VALUE", "percent_of_total_borrows": "% OF TOTAL BORROWS", "borrower_variable_rate": "APY VARIABLE", "borrower_stable_rate": "APY STABLE"}, inplace=True)
         st.write(display_user_borrows_df)
     except IndexError:
         st.write("Select a row in the table to view detailed lending data for that address.")
