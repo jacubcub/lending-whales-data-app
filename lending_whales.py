@@ -11,11 +11,9 @@ from refresh_component import refresh_component
 from string import Template
 
 st.set_page_config(page_title="Whale Watcher", page_icon="🐋", layout="wide")
+nav_container = st.container()
 st.title("🐋 Whale Watcher")
 st.text("AAVE V2 on Avalanche")
-
-if st.button("reload"):
-    refresh_component()
 
 # using secrets file for general env vars https://docs.streamlit.io/streamlit-cloud/get-started/deploy-an-app/connect-to-data-sources/secrets-management
 url = st.secrets["AAVE_SUBGRAPH"]
@@ -23,50 +21,48 @@ url = st.secrets["AAVE_SUBGRAPH"]
 sg = Subgrounds()
 lending = sg.load_subgraph(url)
 
-@st.experimental_memo
+@st.experimental_memo(ttl=43200)
 def get_initial_data():
     block = utils.get_lastest_synced_block_number(url)
     return utils.get_all_open_positions(url, block)
 
 open_positions_df = get_initial_data()
 
-whale_type_select = st.selectbox("Show Top 100", ('Depositors', 'Borrowers'))
+placeholder = st.empty()
+with placeholder.container():
+    whale_type_select = st.selectbox("Show Top 100", ('Depositors', 'Borrowers'))
+    if whale_type_select == "Depositors":
+        position_side = "LENDER"
+        position_side_column_label = "CURRENT DEPOSITS"
+        number_assets_column_label = "NO. OF UNIQUE ASSETS DEPOSITED"
+    else:
+        position_side = "BORROWER"
+        position_side_column_label = "CURRENT BORROWS"
+        number_assets_column_label = "NO. OF UNIQUE ASSETS BORROWED"
+    sided_df = open_positions_df[(open_positions_df["side"] == position_side)]
 
-if whale_type_select == "Depositors":
-    position_side = "LENDER"
-    position_side_column_label = "CURRENT DEPOSITS"
-    number_assets_column_label = "NO. OF UNIQUE ASSETS DEPOSITED"
-else:
-    position_side = "BORROWER"
-    position_side_column_label = "CURRENT BORROWS"
-    number_assets_column_label = "NO. OF UNIQUE ASSETS BORROWED"
-
-sided_df = open_positions_df[(open_positions_df["side"] == position_side)]
-
-agg_df = sided_df.groupby("account_id", as_index=False).agg(
-    usd_value=('balance_usd', 'sum'),
-    asset_count=('market.inputToken.symbol', 'count')
+    agg_df = sided_df.groupby("account_id", as_index=False).agg(
+        usd_value=('balance_usd', 'sum'),
+        asset_count=('market.inputToken.symbol', 'count')
     ).sort_values(
         ["usd_value"], 
         ascending=False
     )[:100].reset_index(drop=True)
 
 
-agg_df["usd_value"] = agg_df["usd_value"].apply(lambda x: "${:,.0f}".format(x))
-agg_df.rename(columns={"account_id": "ADDRESS", "usd_value": position_side_column_label, "asset_count": number_assets_column_label}, inplace=True)
-
-if st.button("Clear Cached Data"):
-    get_initial_data.clear()
-    get_initial_data()
-
-placeholder = st.empty()
-with placeholder:
+    agg_df["usd_value"] = agg_df["usd_value"].apply(lambda x: "${:,.0f}".format(x))
+    agg_df.rename(columns={"account_id": "ADDRESS", "usd_value": position_side_column_label, "asset_count": number_assets_column_label}, inplace=True)
     selection = utils.aggrid_interactive_table(agg_df)
+
+
 
 if selection:
     try:
         selected_address = selection["selected_rows"][0]["ADDRESS"]
         placeholder.empty()
+        with nav_container:
+            if st.button("< Back"):
+                refresh_component()
         # DEPOSITS
         address_deposit_positions = open_positions_df[(open_positions_df["side"] == "LENDER") & (open_positions_df["account_id"] == selected_address)].copy()
         current_deposited_metric = address_deposit_positions["balance_usd"].sum()
@@ -94,7 +90,7 @@ if selection:
         display_user_borrows_df.rename(columns={
             "market.inputToken.symbol": "ASSET", "balance_adj": "BORROWED AMOUNT", "market.inputTokenPriceUSD": "CURRENT PRICE",
             "balance_usd": "TOTAL BORROWED VALUE", "percent_of_total_borrows": "% OF TOTAL BORROWS", "borrower_variable_rate": "APY VARIABLE", "borrower_stable_rate": "APY STABLE"}, inplace=True)
-        st.write('<hr/>', unsafe_allow_html=True)
+
         st.subheader(selected_address)
         col1, col2, col3 = st.columns(3)
         col1.metric("Current Deposits", "$" + millify(current_deposited_metric, precision=2))
@@ -111,3 +107,7 @@ if selection:
         lcol2.plotly_chart(fig_b, use_container_width=True)
     except IndexError:
         st.write("Select a row in the table to view detailed lending data for that address.")
+
+if st.button("Clear Cached Data"):
+    get_initial_data.clear()
+    get_initial_data()
