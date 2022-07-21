@@ -6,12 +6,16 @@ import plotly.express as px
 from subgrounds.subgrounds import Subgrounds
 import utils
 from millify import millify
+from refresh_component import refresh_component
 
 from string import Template
 
 st.set_page_config(page_title="Whale Watcher", page_icon="🐋", layout="wide")
 st.title("🐋 Whale Watcher")
 st.text("AAVE V2 on Avalanche")
+
+if st.button("reload"):
+    refresh_component()
 
 # using secrets file for general env vars https://docs.streamlit.io/streamlit-cloud/get-started/deploy-an-app/connect-to-data-sources/secrets-management
 url = st.secrets["AAVE_SUBGRAPH"]
@@ -51,15 +55,18 @@ agg_df = sided_df.groupby("account_id", as_index=False).agg(
 agg_df["usd_value"] = agg_df["usd_value"].apply(lambda x: "${:,.0f}".format(x))
 agg_df.rename(columns={"account_id": "ADDRESS", "usd_value": position_side_column_label, "asset_count": number_assets_column_label}, inplace=True)
 
-selection = utils.aggrid_interactive_table(agg_df)
-
 if st.button("Clear Cached Data"):
     get_initial_data.clear()
     get_initial_data()
 
+placeholder = st.empty()
+with placeholder:
+    selection = utils.aggrid_interactive_table(agg_df)
+
 if selection:
     try:
         selected_address = selection["selected_rows"][0]["ADDRESS"]
+        placeholder.empty()
         # DEPOSITS
         address_deposit_positions = open_positions_df[(open_positions_df["side"] == "LENDER") & (open_positions_df["account_id"] == selected_address)].copy()
         current_deposited_metric = address_deposit_positions["balance_usd"].sum()
