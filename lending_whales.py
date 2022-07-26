@@ -92,6 +92,10 @@ if selection:
             "balance_usd": "TOTAL BORROWED VALUE", "percent_of_total_borrows": "% OF TOTAL BORROWS", "borrower_variable_rate": "APY VARIABLE", "borrower_stable_rate": "APY STABLE"}, inplace=True)
 
         st.subheader(selected_address)
+        # line chart
+        time_series_df = utils.get_account_daily_positions(url, selected_address, 60)
+        fig = px.line(time_series_df, x="date", y=["borrows_usd", "deposits_usd"])
+        st.plotly_chart(fig)
         col1, col2, col3 = st.columns(3)
         col1.metric("Current Deposits", "$" + millify(current_deposited_metric, precision=2))
         col2.metric("Current Borrowed", "$" + millify(current_borrowed_metric, precision=2))

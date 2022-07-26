@@ -3,6 +3,7 @@ import requests
 from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import GridUpdateMode
 
+
 def convert_address_to_link(address: str, url_root: str, target: str = "_blank") -> str:
     """Creates an HTML link by appending address to url
 
@@ -16,6 +17,7 @@ def convert_address_to_link(address: str, url_root: str, target: str = "_blank")
         str: HTML anchor element link
     """
     return f'<a target="{target}" href="{url_root}{address}">{address}</a>'
+
 
 def get_lastest_synced_block_number(subgraph_url: str) -> int:
     latest_block_query = """
@@ -34,12 +36,125 @@ def get_lastest_synced_block_number(subgraph_url: str) -> int:
     data = resp.json()
     return data["data"]["_meta"]["block"]["number"]
 
+
+def _get_daily_snapshot_blocks(subgraph_url: str, days_back: int) -> pd.DataFrame:
+    """Gets block numbers corresponding to each daily snapshot
+    
+    Args:
+        subgraph_url (str): URL of extended lending subgraph
+        days_back (int): Number of days back to query (i.e. 30 will return block numbers of previous 30 days)
+
+    Returns:
+        pd.DataFrame: Pandas DataFrame of block numbers, timestamps, and dates
+    """
+
+    query = """
+        query($days_back: Int){
+            financialsDailySnapshots(first: $days_back, orderBy: timestamp, orderDirection: desc) {
+                blockNumber
+                timestamp
+            }
+        }
+    """
+
+    payload = {
+        "query": query, 
+        "variables": {
+            "days_back": days_back
+        }
+    }
+
+    resp = requests.post(subgraph_url, json=payload)
+    data = resp.json()
+    df = pd.json_normalize(data['data']['financialsDailySnapshots'])
+    df['blockNumber'] = pd.to_numeric(df['blockNumber'])
+    df['date'] = pd.to_datetime(df['timestamp'], unit='s')
+    return df
+
+
+def get_account_daily_positions(subgraph_url: str, account_id: str, days_back: int) -> pd.DataFrame:
+    """Gets daily historical open positions for a given account going back the specified number of days"""
+
+    snapshot_blocks_df = _get_daily_snapshot_blocks(subgraph_url, days_back)
+    data_list = []
+
+    for index, block in enumerate(snapshot_blocks_df["blockNumber"], start=1):
+        query = """
+            query($account_id: String, $block_num: Int){
+                accounts(
+                    where: {openPositionCount_gt: 0, id: $account_id}
+                    block: {number: $block_num}
+                ) {
+                    account_id: id
+                    positions(where: {hashClosed: null}) {
+                        balance
+                        side
+                        market {
+                            market_id: id
+                            inputTokenPriceUSD
+                            inputToken {
+                                decimals
+                                symbol
+                            }
+                            # rates {
+                            #     rate
+                            #     rate_side: side
+                            #     rate_type: type
+                            # }
+                            # dailySnapshots(first: 1, orderBy: timestamp, orderDirection: desc) {
+                            #     totalBorrowBalanceUSD
+                            #     totalDepositBalanceUSD
+                            # }
+                        }
+                    }
+                }
+            }
+        """
+
+        payload = {
+            "query": query,
+            "variables": {
+                "account_id": account_id,
+                "block_num": block
+            }
+        }
+
+        resp = requests.post(subgraph_url, json=payload)
+        print("Progress: Day", index, "of",  days_back, end="\r", flush=True)
+        data = resp.json()
+        data["data"]["accounts"][0]["block_number"] = block
+        data_list.extend(data["data"]["accounts"])
+        
+    positions_df = pd.json_normalize(data_list, ["positions"], ["account_id", "block_number"])
+    positions_df["balance"] = positions_df["balance"].apply(int) # numbers too large for pd.to_numeric()
+    positions_df["market.inputTokenPriceUSD"] = pd.to_numeric(positions_df["market.inputTokenPriceUSD"])
+    positions_df["balance_adj"] = positions_df["balance"] / (10 ** positions_df["market.inputToken.decimals"])
+    positions_df["balance_usd"] = positions_df["balance_adj"] * positions_df["market.inputTokenPriceUSD"]
+    # don't need these anymore and balance will just cause issues due to large numbers
+    positions_df.drop(columns=["balance", "market.inputToken.decimals"], inplace=True)
+
+    lender_amounts_by_block = positions_df[(positions_df["side"] == "LENDER")].groupby(["block_number"], as_index=False)["balance_usd"].sum()
+    lender_amounts_by_block.rename(columns={"block_number": "blockNumber", "balance_usd": "deposits_usd"}, inplace=True)
+    if 'deposits_usd' not in lender_amounts_by_block.columns:
+        lender_amounts_by_block['deposits_usd'] = None
+    borrower_amounts_by_block = positions_df[(positions_df["side"] == "BORROWER")].groupby(["block_number"], as_index=False)["balance_usd"].sum()
+    borrower_amounts_by_block.rename(columns={"block_number": "blockNumber", "balance_usd": "borrows_usd"}, inplace=True)
+    if 'borrows_usd' not in borrower_amounts_by_block.columns:
+        borrower_amounts_by_block['borrows_usd'] = None
+
+    ts_account_positions_df = snapshot_blocks_df.merge(borrower_amounts_by_block, how="left", on="blockNumber")
+    ts_account_positions_df = ts_account_positions_df.merge(lender_amounts_by_block, how="left", on="blockNumber")
+    ts_account_positions_df.fillna(0, inplace=True)
+    return ts_account_positions_df
+
+
 def _query_position_market_data(subgraph_url: str, block_num: int):
     last_id = "0x0000000000000000000000000000000000000000"
     data_list = []
     first = 500
 
     while True:
+        # add parameter to filter by account
         all_positions_query = """
             query($first: Int, $last_id: String, $block_num: Int){
                 accounts(first: $first, where: {openPositionCount_gt: 0, id_gt: $last_id}, orderBy: id, block: {number: $block_num}) {
