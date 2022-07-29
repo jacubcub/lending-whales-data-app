@@ -7,6 +7,7 @@ from subgrounds.subgrounds import Subgrounds
 import utils
 from millify import millify
 from refresh_component import refresh_component
+import datetime
 
 from string import Template
 
@@ -97,13 +98,23 @@ if selection:
         def get_time_series_df(url, selected_address, days_back):
             df = utils.get_account_daily_positions(url, selected_address, days_back)
             return df
-        time_series_df = get_time_series_df(url, selected_address, 60)
+        time_series_df = get_time_series_df(url, selected_address, 30)
         fig = px.line(time_series_df, x="date", y=["borrows_usd", "deposits_usd"])
-        st.plotly_chart(fig)
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Current Deposits", "$" + millify(current_deposited_metric, precision=2))
-        col2.metric("Current Borrowed", "$" + millify(current_borrowed_metric, precision=2))
-        # col3.metric("Humidity", "86%", "4%")
+        @st.experimental_memo(ttl=43200)
+        def get_account_events_df(url, selected_address):
+            df = utils.get_account_events(url, selected_address)
+            return df
+        events_df = get_account_events_df(url, selected_address)
+        transaction_count = len(events_df.sort_index().loc[datetime.datetime.now() - pd.to_timedelta("30day"):])
+        events_df["amountUSD"] = events_df["amountUSD"].apply(lambda x: "${:,.2f}".format(x))
+        events_df["amount_adj"] = events_df["amount_adj"].apply(lambda x: "{:,.2f}".format(x))
+        events_df.rename(columns={"event": "TRANSACTION", "asset.symbol": "ASSET", "amount_adj": "AMOUNT", "amountUSD": "VALUE"}, inplace=True)
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            st.metric("Current Deposits", "$" + millify(current_deposited_metric, precision=2))
+            st.metric("Current Borrowed", "$" + millify(current_borrowed_metric, precision=2))
+            st.metric("Transaction Count (30D)", transaction_count)
+        col2.plotly_chart(fig, use_container_width=True)
         st.write("Deposits")        
         st.write(display_user_deposits_df)
         st.write("Borrows")
@@ -113,6 +124,8 @@ if selection:
         fig_b = px.pie(address_borrow_positions, values='balance_usd', names='market.inputToken.symbol', title='BORROW COMPOSITION', color_discrete_sequence=px.colors.qualitative.D3)
         lcol1.plotly_chart(fig_d, use_container_width=True)
         lcol2.plotly_chart(fig_b, use_container_width=True)
+        st.write("Historical Transactions")
+        st.write(events_df)
     except IndexError:
         st.write("Select a row in the table to view detailed lending data for that address.")
 

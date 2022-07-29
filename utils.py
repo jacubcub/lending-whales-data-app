@@ -250,6 +250,108 @@ def get_all_open_positions(subgraph_url: str, block_num: int) -> pd.DataFrame:
     return results_df
 
 
+def get_account_events(subgraph_url: str, account_id: str) -> pd.DataFrame:
+
+    query = """
+    query($account_id: String){
+    accounts(where: {id: $account_id}) {
+        account_id: id
+        borrows {
+        amount
+        amountUSD
+        asset {
+            symbol
+            decimals
+        }
+        timestamp
+        }
+        deposits {
+        amount
+        amountUSD
+        asset {
+            symbol
+            decimals
+        }
+        timestamp
+        }
+        liquidates {
+        amount
+        amountUSD
+        asset {
+            symbol
+            decimals
+        }
+        timestamp
+        }
+        liquidations {
+        amount
+        amountUSD
+        asset {
+            decimals
+            symbol
+        }
+        timestamp
+        }
+        repays {
+        amount
+        amountUSD
+        asset {
+            decimals
+            symbol
+        }
+        timestamp
+        }
+        withdraws {
+        amount
+        amountUSD
+        asset {
+            decimals
+            symbol
+        }
+        timestamp
+        }
+    }
+    }
+    """
+
+    payload = {
+            "query": query,
+            "variables": {
+                "account_id": account_id
+            }
+        }
+
+    resp = requests.post(subgraph_url, json=payload)
+    # print("Progress: Day", index, "of",  days_back, end="\r", flush=True)
+    data = resp.json()
+
+    deposits_df = pd.json_normalize(data["data"]["accounts"][0], ["deposits"])
+    deposits_df["event"] = "deposit"
+    borrows_df = pd.json_normalize(data["data"]["accounts"][0], ["borrows"])
+    borrows_df["event"] = "borrow"
+    withdraws_df = pd.json_normalize(data["data"]["accounts"][0], ["withdraws"])
+    withdraws_df["event"] = "withdraw"
+    liquidates_df = pd.json_normalize(data["data"]["accounts"][0], ["liquidates"])
+    liquidates_df["event"] = "liquidate"
+    liquidations_df = pd.json_normalize(data["data"]["accounts"][0], ["liquidations"])
+    liquidations_df["event"] = "liquidation"
+    repays_df = pd.json_normalize(data["data"]["accounts"][0], ["repays"])
+    repays_df["event"] = "repay"
+
+    events_df = pd.concat([deposits_df, borrows_df, withdraws_df, liquidates_df, liquidations_df, repays_df], ignore_index=True).sort_values("timestamp", ascending=False)
+    events_df['date'] = pd.to_datetime(events_df['timestamp'], unit='s')
+    events_df = events_df.set_index("date")
+
+    events_df["amountUSD"] = pd.to_numeric(events_df["amountUSD"])
+    events_df["amount"] = events_df["amount"].apply(int) # numbers too large for pd.to_numeric()
+    events_df["amount_adj"] = events_df["amount"] / (10 ** events_df["asset.decimals"])
+    # don't need these anymore and balance will just cause issues due to large numbers
+    events_df.drop(columns=["timestamp", "asset.decimals", "amount"], inplace=True)
+    events_df = events_df[['event', 'asset.symbol', 'amount_adj', 'amountUSD']]
+
+    return events_df
+
+
 def aggrid_interactive_table(df: pd.DataFrame):
     """Creates an st-aggrid interactive table based on a dataframe.
 
