@@ -94,11 +94,11 @@ if selection:
 
         st.subheader(selected_address)
         # line chart
-        @st.experimental_memo(ttl=43200)
+        # @st.experimental_memo(ttl=43200)
         def get_time_series_df(url, selected_address, days_back):
             df = utils.get_account_daily_positions(url, selected_address, days_back)
             return df
-        time_series_df = get_time_series_df(url, selected_address, 30)
+        time_series_df = get_time_series_df(url, selected_address, 30)   
         fig = px.line(time_series_df, x="date", y=["borrows_usd", "deposits_usd"])
         @st.experimental_memo(ttl=43200)
         def get_account_events_df(url, selected_address):

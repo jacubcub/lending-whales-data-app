@@ -2,6 +2,8 @@ import pandas as pd
 import requests
 from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import GridUpdateMode
+import asyncio
+import aiohttp
 
 
 def convert_address_to_link(address: str, url_root: str, target: str = "_blank") -> str:
@@ -72,14 +74,10 @@ def _get_daily_snapshot_blocks(subgraph_url: str, days_back: int) -> pd.DataFram
     return df
 
 
-def get_account_daily_positions(subgraph_url: str, account_id: str, days_back: int) -> pd.DataFrame:
-    """Gets daily historical open positions for a given account going back the specified number of days"""
-
-    snapshot_blocks_df = _get_daily_snapshot_blocks(subgraph_url, days_back)
-    data_list = []
-
-    for index, block in enumerate(snapshot_blocks_df["blockNumber"], start=1):
-        query = """
+async def _get_account_daily_position(session: aiohttp.ClientSession, subgraph_url: str, account_id: str, block: int) -> dict:
+    """Gets account's open positions for given block"""
+    
+    query = """
             query($account_id: String, $block_num: Int){
                 accounts(
                     where: {openPositionCount_gt: 0, id: $account_id}
@@ -96,36 +94,42 @@ def get_account_daily_positions(subgraph_url: str, account_id: str, days_back: i
                                 decimals
                                 symbol
                             }
-                            # rates {
-                            #     rate
-                            #     rate_side: side
-                            #     rate_type: type
-                            # }
-                            # dailySnapshots(first: 1, orderBy: timestamp, orderDirection: desc) {
-                            #     totalBorrowBalanceUSD
-                            #     totalDepositBalanceUSD
-                            # }
                         }
                     }
                 }
             }
         """
 
-        payload = {
-            "query": query,
-            "variables": {
-                "account_id": account_id,
-                "block_num": block
-            }
+    payload = {
+        "query": query,
+        "variables": {
+            "account_id": account_id,
+            "block_num": block
         }
+    }
 
-        resp = requests.post(subgraph_url, json=payload)
-        print("Progress: Day", index, "of",  days_back, end="\r", flush=True)
-        data = resp.json()
-        data["data"]["accounts"][0]["block_number"] = block
-        data_list.extend(data["data"]["accounts"])
-        
-    positions_df = pd.json_normalize(data_list, ["positions"], ["account_id", "block_number"])
+    resp = await session.request('POST', url=subgraph_url, json=payload)
+    data = await resp.json()
+    data["data"]["accounts"][0]["block_number"] = block
+    return data["data"]["accounts"][0]
+
+
+async def _run_account_daily_positions(subgraph_url: str, account_id: str, days_back: int) -> pd.DataFrame:
+    """Gathers coroutines for getting daily account positions"""
+
+    snapshot_blocks_df = _get_daily_snapshot_blocks(subgraph_url, days_back)
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        for block in snapshot_blocks_df["blockNumber"]:
+            tasks.append(_get_account_daily_position(session=session, subgraph_url=subgraph_url, account_id=account_id, block=block))
+        account_daily_positions_list = await asyncio.gather(*tasks, return_exceptions=True)
+        return account_daily_positions_list, snapshot_blocks_df
+
+def get_account_daily_positions(subgraph_url: str, account_id: str, days_back: int):
+    """Runs daily account position queries asynchronously and formats resulting dataframe"""
+    account_daily_positions_list, snapshot_blocks_df = asyncio.run(_run_account_daily_positions(subgraph_url=subgraph_url, account_id=account_id, days_back=days_back))
+    print(account_daily_positions_list)
+    positions_df = pd.json_normalize(account_daily_positions_list, ["positions"], ["account_id", "block_number"])
     positions_df["balance"] = positions_df["balance"].apply(int) # numbers too large for pd.to_numeric()
     positions_df["market.inputTokenPriceUSD"] = pd.to_numeric(positions_df["market.inputTokenPriceUSD"])
     positions_df["balance_adj"] = positions_df["balance"] / (10 ** positions_df["market.inputToken.decimals"])
